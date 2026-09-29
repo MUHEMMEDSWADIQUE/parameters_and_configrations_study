@@ -1,0 +1,154 @@
+# =============================================================================
+# resources/jobs.yml — Databricks Workflow (Lakeflow Job) definition
+# =============================================================================
+# This file defines the `parameter_lab_job` resource.
+#
+# KEY PARAMETER CONCEPTS:
+#
+# 1. JOB PARAMETERS (job.parameters):
+#    Defined at the job level. Available to ALL tasks via:
+#      Python:  dbutils.widgets.get("param_name")
+#    These act like notebook widgets. They have defaults but can be
+#    overridden at job-run time.
+#
+# 2. TASK PARAMETERS (task.notebook_task.base_parameters):
+#    Defined per-task. These override job-level parameters for that task.
+#    Precedence: task params > job params > defaults.
+#
+# 3. TASK VALUES (dbutils.jobs.taskValues):
+#    Set by one task, read by downstream tasks. These are RUNTIME values.
+#    They flow through the Databricks Jobs framework, not through Spark
+#    configuration or DAB variables.
+#      Set:    dbutils.jobs.taskValues.set(key="domain", value="finance")
+#      Get:    dbutils.jobs.taskValues.get(taskKey="task_a", key="domain")
+#
+# 4. DEPLOY-TIME SUBSTITUTION (${var.xxx}):
+#    DAB replaces ${var.xxx} in this YAML at deploy time.
+#
+# TASK FLOW:
+#   Task A (producer)  ->  publishes task values
+#       v
+#   Task B (consumer)  ->  reads task values, publishes new ones
+#       v
+#   Task C (task_values) ->  transforms and publishes
+#       v
+#   Task D (dynamic_params) ->  reads metadata, publishes config
+#       v
+#   Task E (pipeline)  ->  triggers the SDP pipeline
+# =============================================================================
+
+resources:
+  jobs:
+    parameter_lab_job:
+      name: ${var.job_name}_${bundle.target}
+
+      # ---------------------------------------------------------------------
+      # JOB PARAMETERS — available to ALL tasks as notebook widgets.
+      # Override at run time via the Jobs UI or REST API.
+      # Access in Python: dbutils.widgets.get("catalog")
+      # ---------------------------------------------------------------------
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: environment
+          default: ${var.environment}
+        - name: processing_mode
+          default: ${var.processing_mode}
+        - name: json_config
+          default: ${var.json_config}
+
+      # ---------------------------------------------------------------------
+      # Email notifications (disabled by default)
+      # ---------------------------------------------------------------------
+      email_notifications:
+        on_failure: []
+        on_success: []
+
+      # ---------------------------------------------------------------------
+      # Job cluster
+      # ---------------------------------------------------------------------
+      job_clusters:
+        - job_cluster_key: default
+          new_cluster:
+            spark_version: latest
+            node_type_id: i3.xlarge
+            num_workers: 1
+
+      # ---------------------------------------------------------------------
+      # TASKS — single tasks block (no duplicates)
+      # Each task references job_cluster_key: default.
+      # ---------------------------------------------------------------------
+      tasks:
+
+        # --- Task A: Parameter Producer -------------------------------
+        - task_key: task_a_producer
+          job_cluster_key: default
+          description: "Reads metadata and produces task values (source_table, load_type, watermark, etc.)"
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.name}/parameter-lab/src/workflows/01_parameter_producer.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              environment: ${var.environment}
+              source_path: ${var.source_path}
+          spark_conf:
+            parameter_lab.task: task_a_producer
+            parameter_lab.environment: ${var.environment}
+
+        # --- Task B: Parameter Consumer -------------------------------
+        - task_key: task_b_consumer
+          job_cluster_key: default
+          description: "Consumes task values from Task A, transforms them, and publishes new values"
+          depends_on:
+            - task_key: task_a_producer
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.name}/parameter-lab/src/workflows/02_parameter_consumer.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          spark_conf:
+            parameter_lab.task: task_b_consumer
+            parameter_lab.environment: ${var.environment}
+
+        # --- Task C: Task Values Demo ---------------------------------
+        - task_key: task_c_task_values
+          job_cluster_key: default
+          description: "Demonstrates advanced task value set/get patterns"
+          depends_on:
+            - task_key: task_b_consumer
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.name}/parameter-lab/src/workflows/03_task_values.py
+
+        # --- Task D: Dynamic Parameters --------------------------------
+        - task_key: task_d_dynamic_params
+          job_cluster_key: default
+          description: "Parses JSON config and generates dynamic parameters from metadata"
+          depends_on:
+            - task_key: task_c_task_values
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.name}/parameter-lab/src/workflows/04_dynamic_parameters.py
+            base_parameters:
+              json_config: ${var.json_config}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+        # --- Task E: Pipeline Trigger ----------------------------------
+        - task_key: task_e_pipeline
+          description: "Triggers the SDP pipeline with parameters derived from upstream tasks"
+          depends_on:
+            - task_key: task_d_dynamic_params
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.parameter_lab_pipeline.id}
+          # Note: Pipeline tasks don't support base_parameters directly.
+          # Pipeline configuration comes from the pipeline resource definition
+          # in pipelines.yml. The pipeline reads its config via spark.conf.get().
+
+      # ---------------------------------------------------------------------
+      # Schedule (uncomment to enable)
+      # ---------------------------------------------------------------------
+      # schedule:
+      #   quartz_cron_expression: "0 0 8 * * ?"
+      #   timezone_id: UTC
+      #   pause_status: UNPAUSED

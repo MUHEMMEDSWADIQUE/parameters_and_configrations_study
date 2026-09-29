@@ -1,0 +1,43 @@
+# =============================================================================
+# resources/environments/dev.yml — Development target
+# =============================================================================
+# This file is included via `include: - resources/environments/*.yml`.
+# It defines the `dev` target, overriding bundle-level variables.
+#
+# Key concept — PARAMETER PRECEDENCE:
+#   bundle default (databricks.yml)  ←  lowest priority
+#   target override (this file)        ←  higher priority
+#   CLI flag (--var="key=value")      ←  highest priority
+#
+# So `schema` is `parameter_lab` in databricks.yml but becomes
+# `parameter_lab_dev` here. When you run `databricks bundle deploy -t dev`,
+# every ${var.schema} reference resolves to `parameter_lab_dev`.
+# =============================================================================
+
+targets:
+  dev:
+    description: "Development environment — schema suffix _dev, incremental mode"
+    variables:
+      catalog: main
+      schema: parameter_lab_dev
+      environment: dev
+      source_path: /Volumes/main/parameter_lab/raw
+      processing_mode: incremental
+      max_files_per_trigger: "50"
+      enable_quality_checks: "true"
+      retention_days: "7"
+
+    # Dev-specific workspace settings (optional; inherits from bundle-level)
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.name}/.bundle/${bundle.name}/dev
+
+    # Dev can use a smaller cluster
+    resources:
+      pipelines:
+        parameter_lab_pipeline:
+          clusters:
+            - label: default
+              autoscale:
+                min_instances: 1
+                max_instances: 2
+              driver_instance_pool_id: null

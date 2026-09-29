@@ -1,0 +1,82 @@
+[
+  {
+    "domain": "finance",
+    "source_system": "azure_sql",
+    "source_table": "customers",
+    "target_table": "customers_bronze",
+    "source_path": "main.parameter_lab_dev.source_customers",
+    "target_path": null,
+    "load_type": "incremental",
+    "watermark_column": "modified_date",
+    "primary_key": "customer_id",
+    "active_flag": true,
+    "processing_sequence": 1,
+    "parameters": {
+      "partition_column": "country",
+      "max_files": 100,
+      "quality_check": true,
+      "retention_days": 30,
+      "description": "Finance domain — customer master data from Azure SQL"
+    }
+  },
+  {
+    "domain": "retail",
+    "source_system": "azure_sql",
+    "source_table": "orders",
+    "target_table": "orders_bronze",
+    "source_path": "main.parameter_lab_dev.source_orders",
+    "target_path": null,
+    "load_type": "incremental",
+    "watermark_column": "modified_date",
+    "primary_key": "order_id",
+    "active_flag": true,
+    "processing_sequence": 2,
+    "parameters": {
+      "partition_column": "order_date",
+      "max_files": 200,
+      "quality_check": true,
+      "retention_days": 90,
+      "description": "Retail domain — order transactions from Azure SQL"
+    }
+  },
+  {
+    "domain": "hr",
+    "source_system": "salesforce",
+    "source_table": "employees",
+    "target_table": "employees_bronze",
+    "source_path": "main.parameter_lab_dev.source_employees",
+    "target_path": null,
+    "load_type": "full",
+    "watermark_column": null,
+    "primary_key": "employee_id",
+    "active_flag": true,
+    "processing_sequence": 3,
+    "parameters": {
+      "partition_column": null,
+      "max_files": 50,
+      "quality_check": false,
+      "retention_days": 365,
+      "description": "HR domain — employee master from Salesforce (full reload)"
+    }
+  },
+  {
+    "domain": "inventory",
+    "source_system": "azure_sql",
+    "source_table": "products",
+    "target_table": "products_bronze",
+    "source_path": "main.parameter_lab_dev.source_products",
+    "target_path": null,
+    "load_type": "incremental",
+    "watermark_column": "updated_at",
+    "primary_key": "product_id",
+    "active_flag": false,
+    "processing_sequence": 4,
+    "parameters": {
+      "partition_column": "category",
+      "max_files": 100,
+      "quality_check": true,
+      "retention_days": 60,
+      "description": "Inventory domain — product catalog (currently disabled)"
+    }
+  }
+]
